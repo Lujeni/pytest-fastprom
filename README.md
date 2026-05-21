@@ -27,5 +27,3 @@ def test_route_within_budget(instrumented_client):
 - 🎯 **SLO assertions** on P50, P99, request counts, error rates.
 - 📉 **Regression detection**. Save a baseline, fail the build when it drifts.
 - 🔥 **Warmup** support. Cold starts stay out of your measurement window.
-
-> Your SLO belongs in CI, not a dashboard nobody reads.
