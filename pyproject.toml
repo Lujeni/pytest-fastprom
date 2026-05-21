@@ -32,3 +32,11 @@ packages = ["pytest_fastprom"]
 [tool.typos.default.extend-words]
 # Pn = percentile-N (P50, P99); not a typo of "On".
 Pn = "Pn"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "$version"
+version_scheme = "pep440"
+version_provider = "uv"
+update_changelog_on_bump = true
+major_version_zero = true
