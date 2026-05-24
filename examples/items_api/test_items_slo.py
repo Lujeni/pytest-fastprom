@@ -32,3 +32,14 @@ def test_missing_item_returns_404_not_500(instrumented_client):
     """404 is a 4xx — does not trip no_errors (which only catches 5xx)."""
     r = instrumented_client.get("/items/999")
     assert r.status_code == 404
+
+
+@pytest.mark.metrics(handler="/unstable", max_error_rate=0.05, min_requests=20)
+def test_unstable_within_error_budget(instrumented_client):
+    """Flaky dependency: 1 failure in 20 calls = 5% — exactly on budget, passes.
+
+    ``no_errors=True`` would fail here; an error *budget* tolerates the blip.
+    """
+    for _ in range(19):
+        assert instrumented_client.get("/unstable").status_code == 200
+    assert instrumented_client.get("/unstable?boom=true").status_code == 500
