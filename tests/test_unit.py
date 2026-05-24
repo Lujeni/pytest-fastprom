@@ -161,3 +161,54 @@ def test_snapshot_reset_excludes_prior_requests():
 def test_percentile_rejects_bad_p():
     with pytest.raises(ValueError, match="p must be in"):
         MetricsSnapshot(CollectorRegistry()).percentile_seconds(1.5)
+
+
+# --- error_rate -------------------------------------------------------------
+
+
+def _registry_with_statuses(**by_status: int) -> CollectorRegistry:
+    registry = CollectorRegistry()
+    counter = Counter(
+        "http_requests", "desc", ["method", "status", "handler"], registry=registry
+    )
+    for status, count in by_status.items():
+        for _ in range(count):
+            counter.labels("GET", status, "/").inc()
+    return registry
+
+
+def test_error_rate_ratio():
+    snapshot = MetricsSnapshot(_registry_with_statuses(**{"2xx": 9, "5xx": 1}))
+    assert snapshot.error_rate(handler="/") == 0.1
+    assert snapshot.error_rate(status="4xx", handler="/") == 0.0
+
+
+def test_error_rate_no_traffic_is_zero():
+    assert MetricsSnapshot(CollectorRegistry()).error_rate(handler="/") == 0.0
+
+
+def test_assert_error_rate_below_passes_and_fails():
+    snapshot = MetricsSnapshot(_registry_with_statuses(**{"2xx": 99, "5xx": 1}))
+    snapshot.assert_error_rate_below(0.05, handler="/")
+    with pytest.raises(AssertionError, match="error rate"):
+        snapshot.assert_error_rate_below(0.005, handler="/")
+
+
+# --- environment metadata ---------------------------------------------------
+
+
+def test_machine_info_diff_ignores_volatile_keys():
+    from pytest_fastprom.environment import machine_info_differences
+
+    base = {"python_version": "3.13.0", "system": "Linux", "node": "ci-1"}
+    current = {"python_version": "3.14.0", "system": "Linux", "node": "ci-2"}
+    diffs = machine_info_differences(base, current)
+    assert diffs == {"python_version": ("3.13.0", "3.14.0")}  # node excluded
+
+
+def test_save_records_machine_metadata(tmp_path):
+    path = tmp_path / "base.json"
+    _run("t::a", 0.123).save(path)
+    loaded = MetricsRun.load(path)
+    assert "machine_info" in loaded.metadata
+    assert loaded.metadata["machine_info"]["python_implementation"]

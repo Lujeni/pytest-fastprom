@@ -9,6 +9,8 @@ Marker — ``@pytest.mark.metrics(...)`` accepts:
     p50_below, p99_below   assert latency percentile < threshold (seconds)
     min_requests           assert total request count >= N
     no_errors              assert zero 5xx responses
+    max_error_rate         assert 5xx rate <= fraction (e.g. 0.01 = 1%)
+    max_4xx_rate           assert 4xx rate <= fraction
     warmup_rounds          run N warmup requests before the measurement window
     warmup_url             URL used for auto warmup (default: "/")
 

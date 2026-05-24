@@ -16,7 +16,8 @@ def check_metrics_marker(marker: pytest.Mark, snapshot: MetricsSnapshot) -> None
 
     Calls :func:`pytest.fail` on any violation so the test reports as FAILED
     rather than ERROR. Supported kwargs: ``handler``, ``method``, ``p50_below``,
-    ``p99_below``, ``min_requests`` and ``no_errors``.
+    ``p99_below``, ``min_requests``, ``no_errors``, ``max_error_rate`` and
+    ``max_4xx_rate``.
     """
     kwargs = marker.kwargs
     handler: str | None = kwargs.get("handler")
@@ -46,6 +47,22 @@ def check_metrics_marker(marker: pytest.Mark, snapshot: MetricsSnapshot) -> None
         errors = snapshot.requests_total(status="5xx", handler=handler)
         if errors > 0.0:
             violations.append(f"found {errors:.0f} 5xx error(s) [handler={handler!r}]")
+
+    if "max_error_rate" in kwargs:
+        rate = snapshot.error_rate(status="5xx", method=method, handler=handler)
+        budget: float = kwargs["max_error_rate"]
+        if rate > budget:
+            violations.append(
+                f"5xx error rate {rate:.2%} > budget {budget:.2%} {scope}"
+            )
+
+    if "max_4xx_rate" in kwargs:
+        rate = snapshot.error_rate(status="4xx", method=method, handler=handler)
+        budget = kwargs["max_4xx_rate"]
+        if rate > budget:
+            violations.append(
+                f"4xx error rate {rate:.2%} > budget {budget:.2%} {scope}"
+            )
 
     if violations:
         pytest.fail(

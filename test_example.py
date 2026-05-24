@@ -53,6 +53,13 @@ def test_marker_items_route(instrumented_client):
     instrumented_client.get("/items/2")
 
 
+@pytest.mark.metrics(handler="/", max_error_rate=0.0, min_requests=3)
+def test_marker_error_budget(instrumented_client):
+    """5xx error rate must stay within budget (0% here) — all 2xx, passes."""
+    for _ in range(3):
+        instrumented_client.get("/")
+
+
 @pytest.mark.metrics(handler="/slow", p50_below=0.1, p99_below=0.2)
 def test_marker_slow_fails(instrumented_client):
     """/slow sleeps 300ms → P50 = 0.5s bucket. p50_below=0.1 WILL FAIL."""

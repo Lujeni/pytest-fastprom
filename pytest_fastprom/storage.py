@@ -9,6 +9,7 @@ from pathlib import Path
 
 from _pytest.terminal import TerminalReporter
 
+from .environment import collect_commit_info, collect_machine_info
 from .regression import RegressionFailure, Threshold, threshold_exceeded
 from .snapshot import MetricsSnapshot
 
@@ -40,6 +41,8 @@ class MetricsRun:
 
     def __init__(self) -> None:
         self.records: dict[str, TestRecord] = {}
+        # Populated on save and on load; empty for an in-memory run.
+        self.metadata: dict = {}
 
     def record(self, nodeid: str, snapshot: MetricsSnapshot) -> None:
         """Extract per-handler metrics from a finished test's snapshot."""
@@ -59,8 +62,16 @@ class MetricsRun:
     def save(self, path: Path) -> None:
         """Write this run to ``path`` as JSON."""
         path.parent.mkdir(parents=True, exist_ok=True)
+        metadata: dict = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "machine_info": collect_machine_info(),
+        }
+        commit_info = collect_commit_info()
+        if commit_info:
+            metadata["commit_info"] = commit_info
+        self.metadata = metadata
         payload = {
-            "metadata": {"created_at": datetime.now(timezone.utc).isoformat()},
+            "metadata": metadata,
             "tests": {
                 nodeid: {
                     "handlers": {key: asdict(hm) for key, hm in rec.handlers.items()}
@@ -75,6 +86,7 @@ class MetricsRun:
         """Read a previously saved run from ``path``."""
         run = cls()
         payload = json.loads(path.read_text())
+        run.metadata = payload.get("metadata", {})
         for nodeid, test_data in payload.get("tests", {}).items():
             record = TestRecord(nodeid=nodeid)
             for key, hm_data in test_data.get("handlers", {}).items():

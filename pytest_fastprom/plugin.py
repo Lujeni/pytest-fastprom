@@ -9,6 +9,7 @@ import pytest
 from _pytest.terminal import TerminalReporter
 
 from ._types import REGISTRY_KEY
+from .environment import collect_machine_info, machine_info_differences
 from .marker import check_metrics_marker
 from .regression import RegressionFailure, parse_thresholds
 from .snapshot import MetricsSnapshot
@@ -49,6 +50,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
         "metrics(p50_below=, p99_below=, min_requests=, no_errors=, "
+        "max_error_rate=, max_4xx_rate=, "
         "handler=, method=, warmup_rounds=, warmup_url='/'): "
         "auto-assert Prometheus metrics after test; optional warmup window",
     )
@@ -65,6 +67,7 @@ class MetricsPytestPlugin:
         self.run = MetricsRun()
         self._regression_failures: list[RegressionFailure] = []
         self._missing_baseline: str | None = None
+        self._machine_diffs: dict[str, tuple[str, str]] = {}
 
     @pytest.hookimpl(wrapper=True)
     def pytest_runtest_call(self, item: pytest.Item) -> Generator[None, None, None]:
@@ -97,6 +100,11 @@ class MetricsPytestPlugin:
             return
 
         baseline = MetricsRun.load(baseline_path)
+        baseline_machine = baseline.metadata.get("machine_info", {})
+        if baseline_machine:
+            self._machine_diffs = machine_info_differences(
+                baseline_machine, collect_machine_info()
+            )
         fail_spec: str = self.config.getoption(
             "--metrics-compare-fail", default=_DEFAULT_FAIL_SPEC
         )
@@ -131,7 +139,19 @@ class MetricsPytestPlugin:
                 f"metrics baseline not found: {self._missing_baseline}",
                 yellow=True,
             )
-        elif self._regression_failures:
+            return
+
+        if self._machine_diffs:
+            terminalreporter.write_sep(
+                "!", "metrics baseline ran on a different machine", yellow=True
+            )
+            for key, (base_val, cur_val) in sorted(self._machine_diffs.items()):
+                terminalreporter.write_line(
+                    f"  {key}: baseline {base_val!r} → current {cur_val!r}",
+                    yellow=True,
+                )
+
+        if self._regression_failures:
             terminalreporter.write_sep("=", "METRICS REGRESSIONS", red=True)
             for failure in self._regression_failures:
                 terminalreporter.write_line(str(failure), red=True)

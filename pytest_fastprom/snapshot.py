@@ -122,6 +122,25 @@ class MetricsSnapshot:
             total += value
         return total
 
+    def error_rate(
+        self,
+        *,
+        status: str = "5xx",
+        method: str | None = None,
+        handler: str | None = None,
+    ) -> float:
+        """Fraction of matching requests whose status class is ``status``.
+
+        Returns ``0.0`` when no requests match — a route with no traffic cannot
+        exceed an error budget. ``status`` is the instrumentator grouping, e.g.
+        ``"5xx"`` for server errors or ``"4xx"`` for client errors.
+        """
+        total = self.requests_total(method=method, handler=handler)
+        if total == 0.0:
+            return 0.0
+        errors = self.requests_total(method=method, status=status, handler=handler)
+        return errors / total
+
     def percentile_seconds(
         self,
         p: float,
@@ -202,6 +221,21 @@ class MetricsSnapshot:
         """Assert no 5xx responses were recorded."""
         count = self.requests_total(status="5xx")
         assert count == 0.0, f"Found {count:.0f} server error(s) (5xx)"
+
+    def assert_error_rate_below(
+        self,
+        max_rate: float,
+        *,
+        status: str = "5xx",
+        method: str | None = None,
+        handler: str | None = None,
+    ) -> None:
+        """Assert the ``status`` error rate is at or below ``max_rate`` (0..1)."""
+        rate = self.error_rate(status=status, method=method, handler=handler)
+        assert rate <= max_rate, (
+            f"{status} error rate {rate:.2%} exceeds budget {max_rate:.2%} "
+            f"[method={method!r} handler={handler!r}]"
+        )
 
     def assert_percentile_below(
         self,

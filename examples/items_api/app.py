@@ -26,4 +26,11 @@ def create_app() -> FastAPI:
         await asyncio.sleep(0.25)
         return {"results": list(_DB.values())}
 
+    @app.get("/unstable")
+    async def unstable(boom: bool = False) -> dict:
+        # Flaky dependency: returns 500 when ?boom=true, else 200.
+        if boom:
+            raise HTTPException(status_code=500, detail="downstream blew up")
+        return {"ok": True}
+
     return app
