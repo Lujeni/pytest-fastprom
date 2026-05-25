@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import operator
+
 import pytest
 from prometheus_client import CollectorRegistry
 
@@ -15,13 +17,18 @@ from ._types import (
 )
 
 
-def collect_samples(registry: CollectorRegistry) -> SamplesDict:
-    """Flatten every sample in a registry into a {(name, labels): value} dict."""
+def collect_samples(*registries: CollectorRegistry) -> SamplesDict:
+    """Flatten every sample across ``registries`` into a {(name, labels): value} dict.
+
+    Samples sharing a name and label set across registries are summed, so the
+    isolated HTTP registry and the app's global registry can be read as one.
+    """
     samples: SamplesDict = {}
-    for metric in registry.collect():
-        for sample in metric.samples:
-            key: SampleKey = (sample.name, frozenset(sample.labels.items()))
-            samples[key] = sample.value
+    for registry in registries:
+        for metric in registry.collect():
+            for sample in metric.samples:
+                key: SampleKey = (sample.name, frozenset(sample.labels.items()))
+                samples[key] = samples.get(key, 0.0) + sample.value
     return samples
 
 
@@ -38,8 +45,12 @@ class MetricsSnapshot:
         registry: CollectorRegistry,
         node: pytest.Item | None = None,
         preset_baseline: SamplesDict | None = None,
+        extra_registries: list[CollectorRegistry] | None = None,
     ) -> None:
         self._registry = registry
+        # Read only by metric_value(); kept off the HTTP path so an app that also
+        # instruments the global registry cannot double-count http_* samples.
+        self._extra_registries = extra_registries or []
         # Baseline lives on the node so the fixture, hook and reset() all share it.
         self._node = node
         # Used only for node-less snapshots (e.g. session recording).
@@ -86,7 +97,7 @@ class MetricsSnapshot:
             client.get("/items/1")      # counted
             metrics.assert_p50_below(0.5)
         """
-        baseline = collect_samples(self._registry)
+        baseline = collect_samples(self._registry, *self._extra_registries)
         if self._node is not None:
             self._node.stash[BASELINE_KEY] = baseline
         else:
@@ -96,6 +107,79 @@ class MetricsSnapshot:
         """Value for one exact sample name and label combination."""
         key: SampleKey = (sample_name, frozenset((labels or {}).items()))
         return self._samples().get(key, 0.0)
+
+    def metric_value(
+        self,
+        name: str,
+        *,
+        labels: dict[str, str] | None = None,
+        delta: bool = True,
+    ) -> float:
+        """Sum of the samples named ``name`` whose labels match ``labels``.
+
+        Reads the app's extra registries (its global ``prometheus_client``
+        registry) on top of the isolated one, so a metric declared the ordinary
+        way — ``Counter("cache_hits", ...)`` — is assertable via its full sample
+        name, e.g. ``"cache_hits_total"`` or ``"queue_depth"``.
+
+        ``labels`` is a *subset* filter: ``labels=None`` sums every series of the
+        name. ``delta`` (default) subtracts the per-test baseline, the right
+        choice for cumulative counters on the shared global registry; pass
+        ``delta=False`` to read a gauge's current absolute value.
+        """
+        wanted = (labels or {}).items()
+        samples = collect_samples(self._registry, *self._extra_registries)
+        baseline = (self._get_baseline() or {}) if delta else {}
+        total = 0.0
+        for key, value in samples.items():
+            sample_name, labels_frozen = key
+            if sample_name != name:
+                continue
+            sample_labels = dict(labels_frozen)
+            if all(sample_labels.get(k) == v for k, v in wanted):
+                total += value - baseline.get(key, 0.0)
+        return total
+
+    def assert_metric(
+        self,
+        name: str,
+        *,
+        labels: dict[str, str] | None = None,
+        delta: bool = True,
+        equals: float | None = None,
+        at_least: float | None = None,
+        at_most: float | None = None,
+        greater_than: float | None = None,
+        less_than: float | None = None,
+    ) -> None:
+        """Assert :meth:`metric_value` satisfies every supplied comparison.
+
+        At least one of ``equals``, ``at_least``, ``at_most``, ``greater_than``
+        or ``less_than`` must be given; all that are pass must hold. ``delta``
+        mirrors :meth:`metric_value` — leave it ``True`` for counters, set
+        ``delta=False`` to assert a gauge's absolute value. Example::
+
+            metrics.assert_metric("cache_hits_total", at_least=1)
+            metrics.assert_metric("queue_depth", delta=False, at_most=10)
+        """
+        checks = (
+            ("==", operator.eq, equals),
+            (">=", operator.ge, at_least),
+            ("<=", operator.le, at_most),
+            (">", operator.gt, greater_than),
+            ("<", operator.lt, less_than),
+        )
+        active = [(sym, op, bound) for sym, op, bound in checks if bound is not None]
+        if not active:
+            raise ValueError(
+                "assert_metric needs one of: equals, at_least, at_most, "
+                "greater_than, less_than"
+            )
+
+        actual = self.metric_value(name, labels=labels, delta=delta)
+        scope = f"{name}{labels or {}}"
+        for sym, op, bound in active:
+            assert op(actual, bound), f"{scope} = {actual}, expected {sym} {bound}"
 
     def requests_total(
         self,

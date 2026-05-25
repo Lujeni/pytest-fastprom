@@ -30,11 +30,32 @@ def test_checkout_stays_in_budget(instrumented_client):
     # passes while 5xx ≤ 1% and 4xx ≤ 5% of requests
 ```
 
+Assert on **your own metrics**, not just the built-in HTTP ones. Declare them
+the ordinary way — a module-level `Counter` on the default registry — and assert
+without any wiring:
+
+```python
+# in your app
+from prometheus_client import Counter
+CACHE_HITS = Counter("cache_hits", "served from cache", ["region"])
+
+# in your test
+def test_cache_is_used(instrumented_client, metrics):
+    instrumented_client.get("/items/1")
+    metrics.assert_metric("cache_hits_total", at_least=1)          # this test's delta
+    metrics.assert_metric("queue_depth", delta=False, at_most=10)  # gauge: absolute
+```
+
+`labels` is a subset filter (omit it to sum every series). Because the app's
+global registry is shared across tests, counters report **this test's delta** by
+default; pass `delta=False` for a gauge whose current value you want as-is.
+
 ## Features
 
 - 📊 **Prometheus-native**. Asserts on real histogram metrics, not stopwatch timing.
 - 🔬 **Isolated** registry per test. No metric leaks between tests.
 - 🎯 **SLO assertions** on P50, P99, request counts, and error rates.
+- 🧩 **Custom metrics**. `assert_metric` checks any Counter/Gauge/Histogram your app exposes.
 - 💸 **Error budgets**. `max_error_rate` / `max_4xx_rate` assert a ratio, not just a zero count.
 - 📉 **Regression detection**. Save a baseline, fail the build when it drifts.
 - 🖥️ **Environment-aware baselines**. Saved runs record git commit + machine info; comparing against a baseline from a different interpreter or arch warns you.

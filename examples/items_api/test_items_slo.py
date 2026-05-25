@@ -43,3 +43,14 @@ def test_unstable_within_error_budget(instrumented_client):
     for _ in range(19):
         assert instrumented_client.get("/unstable").status_code == 200
     assert instrumented_client.get("/unstable?boom=true").status_code == 500
+
+
+def test_custom_cache_metric(instrumented_client, metrics):
+    """Assert on the app's own ``cache_hits`` Counter, not just HTTP metrics."""
+    for _ in range(3):
+        instrumented_client.get("/items/1")  # region defaults to "eu"
+    instrumented_client.get("/items/2?region=us")
+
+    metrics.assert_metric("cache_hits_total", at_least=4)
+    metrics.assert_metric("cache_hits_total", labels={"region": "eu"}, equals=3)
+    metrics.assert_metric("cache_hits_total", labels={"region": "us"}, equals=1)

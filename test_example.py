@@ -5,12 +5,8 @@ Example tests — demonstrates inline assertions, markers, warmup, and regressio
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Inline assertions
-# ---------------------------------------------------------------------------
-
-
 def test_read_main(instrumented_client, metrics):
+    """Inline assertions on request count and server errors."""
     response = instrumented_client.get("/")
     assert response.status_code == 200
     assert response.json() == {"msg": "Hello World"}
@@ -19,22 +15,19 @@ def test_read_main(instrumented_client, metrics):
 
 
 def test_p99_latency(instrumented_client, metrics):
+    """Inline P99 latency assertion on a handler."""
     for _ in range(10):
         instrumented_client.get("/")
     metrics.assert_p99_below(1.0, handler="/", method="GET")
 
 
 def test_multiple_routes_isolated(instrumented_client, metrics):
+    """Each handler is counted independently within the test."""
     instrumented_client.get("/")
     instrumented_client.get("/items/42")
     metrics.assert_requests_total(handler="/", min_count=1)
     metrics.assert_requests_total(handler="/items/{item_id}", min_count=1)
     metrics.assert_requests_total(min_count=2)
-
-
-# ---------------------------------------------------------------------------
-# Marker-based assertions (auto-checked after test body — shows as FAILED)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.metrics(p99_below=1.0, min_requests=3, no_errors=True)
@@ -67,11 +60,6 @@ def test_marker_slow_fails(instrumented_client):
         instrumented_client.get("/slow")
 
 
-# ---------------------------------------------------------------------------
-# Warmup — auto (marker) + manual (metrics.reset)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.metrics(warmup_rounds=3, warmup_url="/", p99_below=1.0, min_requests=5)
 def test_auto_warmup(instrumented_client, metrics):
     """
@@ -101,11 +89,6 @@ def test_manual_warmup(instrumented_client, metrics):
     assert metrics.requests_total(handler="/") == 5.0
     metrics.assert_p99_below(1.0, handler="/")
     metrics.assert_requests_total(handler="/", min_count=5)
-
-
-# ---------------------------------------------------------------------------
-# Intentional failure — P50 threshold on slow endpoint
-# ---------------------------------------------------------------------------
 
 
 def test_slow_endpoint_median_threshold(instrumented_client, metrics):

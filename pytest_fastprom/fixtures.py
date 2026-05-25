@@ -7,12 +7,24 @@ from typing import Generator
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from prometheus_client import REGISTRY as GLOBAL_REGISTRY
 from prometheus_client import CollectorRegistry
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from ._types import BASELINE_KEY, REGISTRY_KEY
 from .plugin import MetricsPytestPlugin
 from .snapshot import MetricsSnapshot, collect_samples
+
+
+# App metrics usually live on prometheus_client's global registry, so custom-metric
+# asserts read it on top of the isolated one. Per-test deltas come from the baseline.
+_EXTRA_REGISTRIES: list[CollectorRegistry] = [GLOBAL_REGISTRY]
+
+
+def _ensure_baseline(node: pytest.Item, registries: list[CollectorRegistry]) -> None:
+    """Record a test-start baseline once, so shared global counters give a delta."""
+    if node.stash.get(BASELINE_KEY, None) is None:
+        node.stash[BASELINE_KEY] = collect_samples(*registries)
 
 
 @pytest.fixture
@@ -38,6 +50,7 @@ def instrumented_client(
     request.node.stash[REGISTRY_KEY] = metrics_registry
 
     Instrumentator(registry=metrics_registry).instrument(fastapi_app)
+    registries = [metrics_registry, *_EXTRA_REGISTRIES]
 
     with TestClient(fastapi_app) as client:
         marker = request.node.get_closest_marker("metrics")
@@ -46,7 +59,11 @@ def instrumented_client(
             for _ in range(marker.kwargs["warmup_rounds"]):
                 client.get(warmup_url)
             # Everything so far becomes the baseline; only later requests count.
-            request.node.stash[BASELINE_KEY] = collect_samples(metrics_registry)
+            request.node.stash[BASELINE_KEY] = collect_samples(*registries)
+        else:
+            # No warmup: anchor the baseline at test start so custom counters on
+            # the shared global registry report this test's delta, not the total.
+            _ensure_baseline(request.node, registries)
 
         yield client
 
@@ -66,6 +83,11 @@ def metrics(
     """A live snapshot for inline assertions inside the test body.
 
     Shares the baseline with :func:`instrumented_client` through the node, so
-    calling ``metrics.reset()`` starts a manual warmup window.
+    calling ``metrics.reset()`` starts a manual warmup window. Also reads the
+    app's global Prometheus registry, so ``assert_metric`` can target custom
+    metrics the app exposes there.
     """
-    return MetricsSnapshot(metrics_registry, node=request.node)
+    _ensure_baseline(request.node, [metrics_registry, *_EXTRA_REGISTRIES])
+    return MetricsSnapshot(
+        metrics_registry, node=request.node, extra_registries=_EXTRA_REGISTRIES
+    )
