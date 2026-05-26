@@ -29,3 +29,6 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Usage: usage.md
+  - Marker reference: markers.md
+  - Regression detection: regression.md
