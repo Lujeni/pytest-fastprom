@@ -22,14 +22,14 @@ def test_route_within_budget(instrumented_client):
 
 ## Features
 
-- 📊 **Prometheus-native**. Asserts on real histogram metrics, not stopwatch timing.
-- 🔬 **Isolated** registry per test. No metric leaks between tests.
-- 🎯 **SLO assertions** on P50, P99, request counts, and error rates.
-- 🧩 **Custom metrics**. `assert_metric` checks any Counter/Gauge/Histogram your app exposes.
-- 💸 **Error budgets**. `max_error_rate` / `max_4xx_rate` assert a ratio, not just a zero count.
-- 📉 **Regression detection**. Save a baseline, fail the build when it drifts.
-- 🖥️ **Environment-aware baselines**. Saved runs record git commit + machine info and warn on cross-machine comparisons.
-- 🔥 **Warmup** support. Cold starts stay out of your measurement window.
+- **Prometheus-native**. Asserts on real histogram metrics, not stopwatch timing.
+- **Isolated** registry per test. No metric leaks between tests.
+- **SLO assertions** on P50, P99, request counts, and error rates.
+- **Custom metrics**. `assert_metric` checks any Counter/Gauge/Histogram your app exposes.
+- **Error budgets**. `max_error_rate` / `max_4xx_rate` assert a ratio, not just a zero count.
+- **Regression detection**. Save a baseline, fail the build when it drifts.
+- **Environment-aware baselines**. Saved runs record git commit + machine info and warn on cross-machine comparisons.
+- **Warmup** support. Cold starts stay out of your measurement window.
 
 ## Install
 
