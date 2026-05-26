@@ -1,5 +1,10 @@
 # pytest-fastprom
 
+!!! danger "Proof of concept"
+    This project is a proof of concept. The approach still needs real-world
+    feedback (REX) before it can be considered validated, so treat results as a
+    signal, not a guarantee. Most of the code was generated using generative AI.
+
 ## Why this project
 
 `pytest-fastprom` started as a proof of concept around a specific blind spot: **performance regressions you can't see in a code review**.
