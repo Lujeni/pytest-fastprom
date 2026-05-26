@@ -41,4 +41,4 @@ pip install pytest-fastprom
 
 ## Docs
 
-Full guide, marker reference, and regression detection: <https://github.com/lujeni/pytest-fastprom>.
+Full guide, marker reference, and regression detection: <https://lujeni.github.io/pytest-fastprom/>.
