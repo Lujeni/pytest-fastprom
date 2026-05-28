@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pytest-fastprom"
 version = "0.2.0"
 description = "Isolated Prometheus metrics assertions for FastAPI tests"
+readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
